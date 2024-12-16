@@ -9,12 +9,17 @@
     "db": "ponder db",
     "codegen": "ponder codegen",
     "lint": "eslint .",
-    "typecheck": "tsc"
+    "pm2:start": "pm2 start 'ponder start' --name ponder-anky",
+    "pm2:stop": "pm2 stop ponder-anky",
+    "pm2:restart": "pm2 restart ponder-anky",
+    "pm2:logs": "pm2 logs ponder-anky",
+    "pm2:monitor": "pm2 monit ponder-anky"
   },
   "dependencies": {
     "ponder": "^0.8.4",
     "hono": "^4.5.0",
-    "viem": "^2.21.3"
+    "viem": "^2.21.3",
+    "pm2": "^5.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",
