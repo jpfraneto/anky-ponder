@@ -16,6 +16,19 @@ import { eq, desc, and, gt, lt, sql } from "ponder";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
+// Utility function to serialize BigInt values
+const serializeBigInt = (obj: any): any => {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === "bigint") return obj.toString();
+  if (Array.isArray(obj)) return obj.map(serializeBigInt);
+  if (typeof obj === "object") {
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, value]) => [key, serializeBigInt(value)])
+    );
+  }
+  return obj;
+};
+
 // Utility function to parse pagination params
 const getPaginationParams = (c: any) => {
   const cursor = c.req.query("cursor") || null;
@@ -46,11 +59,13 @@ ponder.get("/writers", async (c) => {
   const hasMore = writers.length > limit;
   const items = writers.slice(0, limit);
 
-  return c.json({
-    items,
-    nextCursor: hasMore ? items[items.length - 1]?.fid?.toString() : null,
-    prevCursor: cursor ? writers[0]?.fid?.toString() : null,
-  });
+  return c.json(
+    serializeBigInt({
+      items,
+      nextCursor: hasMore ? items[items.length - 1]?.fid?.toString() : null,
+      prevCursor: cursor ? writers[0]?.fid?.toString() : null,
+    })
+  );
 });
 
 // Sessions endpoints
@@ -72,11 +87,15 @@ ponder.get("/sessions", async (c) => {
   const hasMore = sessions.length > limit;
   const items = sessions.slice(0, limit);
 
-  return c.json({
-    items,
-    nextCursor: hasMore ? items[items.length - 1]?.startTime?.toString() : null,
-    prevCursor: cursor ? sessions[0]?.startTime?.toString() : null,
-  });
+  return c.json(
+    serializeBigInt({
+      items,
+      nextCursor: hasMore
+        ? items[items.length - 1]?.startTime?.toString()
+        : null,
+      prevCursor: cursor ? sessions[0]?.startTime?.toString() : null,
+    })
+  );
 });
 
 // Writer's sessions
@@ -102,11 +121,15 @@ ponder.get("/writer/:fid/sessions", async (c) => {
   const hasMore = sessions.length > limit;
   const items = sessions.slice(0, limit);
 
-  return c.json({
-    items,
-    nextCursor: hasMore ? items[items.length - 1]?.startTime?.toString() : null,
-    prevCursor: cursor ? sessions[0]?.startTime?.toString() : null,
-  });
+  return c.json(
+    serializeBigInt({
+      items,
+      nextCursor: hasMore
+        ? items[items.length - 1]?.startTime?.toString()
+        : null,
+      prevCursor: cursor ? sessions[0]?.startTime?.toString() : null,
+    })
+  );
 });
 
 // Tokens endpoints
@@ -128,11 +151,15 @@ ponder.get("/tokens", async (c) => {
   const hasMore = tokens.length > limit;
   const items = tokens.slice(0, limit);
 
-  return c.json({
-    items,
-    nextCursor: hasMore ? items[items.length - 1]?.mintedAt?.toString() : null,
-    prevCursor: cursor ? tokens[0]?.mintedAt?.toString() : null,
-  });
+  return c.json(
+    serializeBigInt({
+      items,
+      nextCursor: hasMore
+        ? items[items.length - 1]?.mintedAt?.toString()
+        : null,
+      prevCursor: cursor ? tokens[0]?.mintedAt?.toString() : null,
+    })
+  );
 });
 
 // Single item endpoints
@@ -145,7 +172,7 @@ ponder.get("/writer/:fid", async (c) => {
   });
 
   if (!writer) return c.json({ error: "Writer not found" }, 404);
-  return c.json(writer);
+  return c.json(serializeBigInt(writer));
 });
 
 ponder.get("/token/:id", async (c) => {
@@ -158,7 +185,7 @@ ponder.get("/token/:id", async (c) => {
   });
 
   if (!token) return c.json({ error: "Token not found" }, 404);
-  return c.json(token);
+  return c.json(serializeBigInt(token));
 });
 
 // Stats endpoint
@@ -173,12 +200,14 @@ ponder.get("/stats", async (c) => {
       .where(eq(SessionTable.isAnky, true)),
   ]);
 
-  return c.json({
-    totalWriters: Number(writerCount[0]?.count),
-    totalSessions: Number(sessionCount[0]?.count),
-    totalTokens: Number(tokenCount[0]?.count),
-    totalAnkys: Number(ankyCount[0]?.count),
-  });
+  return c.json(
+    serializeBigInt({
+      totalWriters: Number(writerCount[0]?.count),
+      totalSessions: Number(sessionCount[0]?.count),
+      totalTokens: Number(tokenCount[0]?.count),
+      totalAnkys: Number(ankyCount[0]?.count),
+    })
+  );
 });
 
 export default ponder;
