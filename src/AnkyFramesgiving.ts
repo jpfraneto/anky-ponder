@@ -1,6 +1,8 @@
 import { eq, and, desc } from "drizzle-orm";
 import { ponder } from "ponder:registry";
 import { writer, session, ankyToken, validAnkyHash } from "ponder:schema";
+import { getContract } from "viem";
+import { AnkyFramesgivingAbi } from "../abis/AnkyFramesgivingAbi";
 
 ponder.on("AnkyFramesgiving:SessionStarted", async ({ event, context }) => {
   console.log("SessionStarted event received");
@@ -75,11 +77,10 @@ ponder.on(
 
 ponder.on("AnkyFramesgiving:SessionEnded", async ({ event, context }) => {
   console.log("SessionEnded event received");
-  const { db } = context;
-  const { fid, isAnky, ipfsHash } = event.args;
-  console.log(
-    `Session ending normally for fid: ${fid}, isAnky: ${isAnky}, ipfsHash: ${ipfsHash}`
-  );
+  const { db, client, contracts } = context;
+  const { fid, isAnky } = event.args;
+
+  console.log(`Session ending normally for fid: ${fid}, isAnky: ${isAnky}`);
 
   // Find the writer's current session
   console.log("Finding writer's current session...");
@@ -88,16 +89,39 @@ ponder.on("AnkyFramesgiving:SessionEnded", async ({ event, context }) => {
     console.log("No current session found for writer");
     return;
   }
+
+  // fid is typically a BigInt from the event. If it's a number, convert to BigInt:
+  const fidBigInt = typeof fid === "bigint" ? fid : BigInt(fid);
+
+  console.log("Fetching completed session count from contract...");
+  const completedSessionCount = await client.readContract({
+    abi: contracts.AnkyFramesgiving.abi,
+    address: contracts.AnkyFramesgiving.address,
+    functionName: "getCompletedSessionCount",
+    args: [fidBigInt],
+  });
+  console.log("completedSessionCount", completedSessionCount);
+
+  // completedSessionCount is a bigint, so subtract using bigint arithmetic
+  const lastIndex = completedSessionCount - 1n;
+  console.log(`Fetching IPFS hash for last session index: ${lastIndex}...`);
+  const ipfsHash = await client.readContract({
+    abi: contracts.AnkyFramesgiving.abi,
+    address: contracts.AnkyFramesgiving.address,
+    functionName: "completedSessions",
+    args: [fidBigInt, lastIndex],
+  });
+  console.log("The IPFS hash is", ipfsHash);
   console.log(`Found session: ${writerData.currentSessionId}`);
 
-  // Update session
+  // Update session in the database
   console.log("Updating session...");
   await db
     .insert(session)
     .values({
       id: writerData.currentSessionId,
       fid: Number(fid),
-      startTime: BigInt(0), // Will be updated if exists
+      startTime: BigInt(0), // If you have a real start time saved, use it
       endTime: BigInt(event.block.timestamp),
       ipfsHash,
       isAnky,
