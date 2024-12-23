@@ -115,50 +115,60 @@ ponder.get("/writers", async (c) => {
 
 // Leaderboard endpoints
 ponder.get("/leaderboard", async (c) => {
-  const leaderboard = await c.db.query.leaderboard.findMany({
-    orderBy: (fields) => [desc(fields.currentStreak)],
-    limit: 8,
-    with: { writer: true },
-  });
+  try {
+    const leaderboard = await c.db.query.leaderboard.findMany({
+      orderBy: (fields) => [desc(fields.currentStreak)],
+      limit: 8,
+      with: { writer: true },
+    });
 
-  return c.json(serializeBigInt(leaderboard));
+    return c.json(serializeBigInt(leaderboard));
+  } catch (error) {
+    console.error("Error fetching leaderboard:", error);
+    throw error;
+  }
 });
 
 ponder.post("/leaderboard", async (c) => {
-  // Get all writers with their sessions
-  const writers = await c.db.query.writer.findMany({
-    with: { sessions: true },
-  });
-
-  // Calculate stats for each writer
-  const writerStats = writers.map((writer) => {
-    const stats = calculateWriterStats(writer.sessions);
-    return {
-      fid: writer.fid,
-      ...stats,
-    };
-  });
-
-  // Sort by current streak and get top 8
-  const top8 = writerStats
-    .sort((a, b) => b.currentStreak - a.currentStreak)
-    .slice(0, 8);
-
-  // Clear existing leaderboard
-  await c.db.delete(LeaderboardTable).where(sql`1=1`);
-
-  // Insert new leaderboard entries
-  for (const stats of top8) {
-    await c.db.insert(LeaderboardTable).values({
-      fid: stats.fid,
-      currentStreak: stats.currentStreak,
-      maxStreak: stats.maxStreak,
-      daysInAnkyverse: stats.daysInAnkyverse,
-      lastUpdated: BigInt(Math.floor(Date.now() / 1000)),
+  try {
+    // Get all writers with their sessions
+    const writers = await c.db.query.writer.findMany({
+      with: { sessions: true },
     });
-  }
 
-  return c.json({ success: true, leaderboard: top8 });
+    // Calculate stats for each writer
+    const writerStats = writers.map((writer) => {
+      const stats = calculateWriterStats(writer.sessions);
+      return {
+        fid: writer.fid,
+        ...stats,
+      };
+    });
+
+    // Sort by current streak and get top 8
+    const top8 = writerStats
+      .sort((a, b) => b.currentStreak - a.currentStreak)
+      .slice(0, 8);
+
+    // Clear existing leaderboard
+    await c.db.delete(LeaderboardTable).where(sql`1=1`);
+
+    // Insert new leaderboard entries
+    for (const stats of top8) {
+      await c.db.insert(LeaderboardTable).values({
+        fid: stats.fid,
+        currentStreak: stats.currentStreak,
+        maxStreak: stats.maxStreak,
+        daysInAnkyverse: stats.daysInAnkyverse,
+        lastUpdated: BigInt(Math.floor(Date.now() / 1000)),
+      });
+    }
+
+    return c.json({ success: true, leaderboard: top8 });
+  } catch (error) {
+    console.error("Error updating leaderboard:", error);
+    throw error;
+  }
 });
 
 // Sessions endpoints
