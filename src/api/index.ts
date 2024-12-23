@@ -129,7 +129,7 @@ ponder.get("/leaderboard", async (c) => {
   }
 });
 
-ponder.post("/leaderboard", async (c) => {
+ponder.get("/leaderboard-update", async (c) => {
   try {
     // Get all writers with their sessions
     const writers = await c.db.query.writer.findMany({
