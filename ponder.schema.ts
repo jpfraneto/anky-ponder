@@ -71,3 +71,21 @@ export const validAnkyHashRelations = relations(validAnkyHash, ({ one }) => ({
     references: [writer.fid],
   }),
 }));
+
+export const leaderboard = onchainTable("leaderboard", (t) => ({
+  fid: t.integer().primaryKey(),
+  currentStreak: t.integer().notNull().default(0),
+  maxStreak: t.integer().notNull().default(0),
+  daysInAnkyverse: t.integer().notNull().default(0),
+  lastUpdated: t.bigint().notNull(),
+  totalSessions: t.integer().notNull().default(0),
+  totalAnky: t.integer().notNull().default(0),
+  totalAnkyMinted: t.integer().notNull().default(0),
+}));
+
+export const leaderboardRelations = relations(leaderboard, ({ one }) => ({
+  writer: one(writer, {
+    fields: [leaderboard.fid],
+    references: [writer.fid],
+  }),
+}));

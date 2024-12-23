@@ -9,12 +9,14 @@ import {
   session as SessionTable,
   ankyToken as AnkyTokenTable,
   validAnkyHash as ValidAnkyHashTable,
+  leaderboard as LeaderboardTable,
 } from "ponder:schema";
 import { eq, desc, and, gt, lt, sql } from "ponder";
 
 // Constants
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const ANKYVERSE_START = new Date("2023-08-10T05:00:00-04:00").getTime();
 
 // Utility function to serialize BigInt values
 const serializeBigInt = (obj: any): any => {
@@ -38,6 +40,49 @@ const getPaginationParams = (c: any) => {
   );
   const direction = c.req.query("direction") === "prev" ? "prev" : "next";
   return { cursor, limit, direction };
+};
+
+// Calculate writer stats
+const calculateWriterStats = (sessions: any[]) => {
+  let currentStreak = 0;
+  let maxStreak = 0;
+  let lastWritingDay = null;
+
+  const sortedSessions = sessions.sort(
+    (a, b) => Number(a.startTime) - Number(b.startTime)
+  );
+
+  for (let i = 0; i < sortedSessions.length; i++) {
+    const sessionDate = new Date(Number(sortedSessions[i].startTime) * 1000);
+    const sessionDay = sessionDate.toISOString().split("T")[0];
+
+    if (lastWritingDay === null) {
+      currentStreak = 1;
+      lastWritingDay = sessionDay;
+    } else {
+      if (!lastWritingDay) continue; // Skip if no last writing day
+      const lastDate = new Date(lastWritingDay);
+      const diffDays = Math.floor(
+        (sessionDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      if (diffDays === 1) {
+        currentStreak++;
+        maxStreak = Math.max(maxStreak, currentStreak);
+      } else if (diffDays > 1) {
+        currentStreak = 1;
+      }
+      lastWritingDay = sessionDay;
+    }
+  }
+
+  return {
+    currentStreak,
+    maxStreak,
+    daysInAnkyverse: Math.floor(
+      (Date.now() - ANKYVERSE_START) / (1000 * 60 * 60 * 24)
+    ),
+  };
 };
 
 // Writers endpoints
@@ -66,6 +111,54 @@ ponder.get("/writers", async (c) => {
       prevCursor: cursor ? writers[0]?.fid?.toString() : null,
     })
   );
+});
+
+// Leaderboard endpoints
+ponder.get("/leaderboard", async (c) => {
+  const leaderboard = await c.db.query.leaderboard.findMany({
+    orderBy: (fields) => [desc(fields.currentStreak)],
+    limit: 8,
+    with: { writer: true },
+  });
+
+  return c.json(serializeBigInt(leaderboard));
+});
+
+ponder.post("/leaderboard", async (c) => {
+  // Get all writers with their sessions
+  const writers = await c.db.query.writer.findMany({
+    with: { sessions: true },
+  });
+
+  // Calculate stats for each writer
+  const writerStats = writers.map((writer) => {
+    const stats = calculateWriterStats(writer.sessions);
+    return {
+      fid: writer.fid,
+      ...stats,
+    };
+  });
+
+  // Sort by current streak and get top 8
+  const top8 = writerStats
+    .sort((a, b) => b.currentStreak - a.currentStreak)
+    .slice(0, 8);
+
+  // Clear existing leaderboard
+  await c.db.delete(LeaderboardTable).where(sql`1=1`);
+
+  // Insert new leaderboard entries
+  for (const stats of top8) {
+    await c.db.insert(LeaderboardTable).values({
+      fid: stats.fid,
+      currentStreak: stats.currentStreak,
+      maxStreak: stats.maxStreak,
+      daysInAnkyverse: stats.daysInAnkyverse,
+      lastUpdated: BigInt(Math.floor(Date.now() / 1000)),
+    });
+  }
+
+  return c.json({ success: true, leaderboard: top8 });
 });
 
 // Sessions endpoints
@@ -172,7 +265,9 @@ ponder.get("/writer/:fid", async (c) => {
   });
 
   if (!writer) return c.json({ error: "Writer not found" }, 404);
-  return c.json(serializeBigInt(writer));
+
+  const stats = calculateWriterStats(writer.sessions);
+  return c.json(serializeBigInt({ ...writer, ...stats }));
 });
 
 ponder.get("/token/:id", async (c) => {
