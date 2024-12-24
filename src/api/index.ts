@@ -100,7 +100,7 @@ type Stats = {
 const calculateWriterStats = (sessions: any[]): Stats => {
   // First filter for only isAnky sessions and sort them
   const ankySessions = sessions
-    .filter((session: any) => session.isAnky)
+    .filter((session) => session.isAnky)
     .sort((a, b) => Number(a.startTime) - Number(b.startTime));
 
   if (!ankySessions.length) {
@@ -129,7 +129,6 @@ const calculateWriterStats = (sessions: any[]): Stats => {
 
   // Calculate streaks
   for (let i = 1; i < days.length; i++) {
-    if (!days[i] || !days[i - 1]) continue; // Skip if either day is undefined
     const diff = Math.floor(
       (new Date(days[i]!).getTime() - new Date(days[i - 1]!).getTime()) /
         86400000
@@ -161,18 +160,18 @@ const calculateWriterStats = (sessions: any[]): Stats => {
   };
 };
 
-export const leaderboardUpdate = async (c: any) => {
+ponder.get("/leaderboard-update", async (c) => {
   try {
     const writers = await c.db.query.writer.findMany({
       with: { sessions: true },
     });
 
     const stats = writers
-      .map((writer: any) => ({
+      .map((writer) => ({
         fid: writer.fid,
         ...calculateWriterStats(writer.sessions),
       }))
-      .sort((a: any, b: any) => b.currentStreak - a.currentStreak)
+      .sort((a, b) => b.currentStreak - a.currentStreak)
       .slice(0, 8);
 
     // Clear and update leaderboard
@@ -190,8 +189,7 @@ export const leaderboardUpdate = async (c: any) => {
     console.error("Error updating leaderboard:", error);
     return c.json({ success: false, error: String(error) });
   }
-};
-
+});
 // Sessions endpoints
 ponder.get("/sessions", async (c) => {
   const { cursor, limit, direction } = getPaginationParams(c);
