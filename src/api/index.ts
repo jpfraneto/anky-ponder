@@ -42,49 +42,6 @@ const getPaginationParams = (c: any) => {
   return { cursor, limit, direction };
 };
 
-// Calculate writer stats
-const calculateWriterStats = (sessions: any[]) => {
-  let currentStreak = 0;
-  let maxStreak = 0;
-  let lastWritingDay = null;
-
-  const sortedSessions = sessions.sort(
-    (a, b) => Number(a.startTime) - Number(b.startTime)
-  );
-
-  for (let i = 0; i < sortedSessions.length; i++) {
-    const sessionDate = new Date(Number(sortedSessions[i].startTime) * 1000);
-    const sessionDay = sessionDate.toISOString().split("T")[0];
-
-    if (lastWritingDay === null) {
-      currentStreak = 1;
-      lastWritingDay = sessionDay;
-    } else {
-      if (!lastWritingDay) continue; // Skip if no last writing day
-      const lastDate = new Date(lastWritingDay);
-      const diffDays = Math.floor(
-        (sessionDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      if (diffDays === 1) {
-        currentStreak++;
-        maxStreak = Math.max(maxStreak, currentStreak);
-      } else if (diffDays > 1) {
-        currentStreak = 1;
-      }
-      lastWritingDay = sessionDay;
-    }
-  }
-
-  return {
-    currentStreak,
-    maxStreak,
-    daysInAnkyverse: Math.floor(
-      (Date.now() - ANKYVERSE_START) / (1000 * 60 * 60 * 24)
-    ),
-  };
-};
-
 // Writers endpoints
 ponder.get("/writers", async (c) => {
   const { cursor, limit, direction } = getPaginationParams(c);
@@ -129,47 +86,111 @@ ponder.get("/leaderboard", async (c) => {
   }
 });
 
-ponder.get("/leaderboard-update", async (c) => {
+type Session = {
+  startTime: string;
+  isAnky: boolean;
+};
+
+type Stats = {
+  currentStreak: number;
+  maxStreak: number;
+  daysInAnkyverse: number;
+};
+
+const calculateWriterStats = (sessions: any[]): Stats => {
+  // First filter for only isAnky sessions and sort them
+  const ankySessions = sessions
+    .filter((session: any) => session.isAnky)
+    .sort((a, b) => Number(a.startTime) - Number(b.startTime));
+
+  if (!ankySessions.length) {
+    return {
+      currentStreak: 0,
+      maxStreak: 0,
+      daysInAnkyverse: Math.floor(
+        (Date.now() / 1000 - ANKYVERSE_START) / 86400
+      ),
+    };
+  }
+
+  // Get unique days
+  const days = [
+    ...new Set(
+      ankySessions.map(
+        (session) =>
+          new Date(Number(session.startTime) * 1000).toISOString().split("T")[0]
+      )
+    ),
+  ].sort();
+
+  let currentStreak = 0;
+  let maxStreak = 0;
+  let tempStreak = 1;
+
+  // Calculate streaks
+  for (let i = 1; i < days.length; i++) {
+    if (!days[i] || !days[i - 1]) continue; // Skip if either day is undefined
+    const diff = Math.floor(
+      (new Date(days[i]!).getTime() - new Date(days[i - 1]!).getTime()) /
+        86400000
+    );
+
+    if (diff === 1) {
+      tempStreak++;
+    } else {
+      maxStreak = Math.max(maxStreak, tempStreak);
+      tempStreak = 1;
+    }
+  }
+
+  maxStreak = Math.max(maxStreak, tempStreak);
+
+  // Calculate current streak
+  const lastDay = new Date(days[days.length - 1]!);
+  const today = new Date();
+  const diffToToday = Math.floor(
+    (today.getTime() - lastDay.getTime()) / 86400000
+  );
+
+  currentStreak = diffToToday <= 1 ? tempStreak : 0;
+
+  return {
+    currentStreak,
+    maxStreak,
+    daysInAnkyverse: Math.floor((Date.now() / 1000 - ANKYVERSE_START) / 86400),
+  };
+};
+
+export const leaderboardUpdate = async (c: any) => {
   try {
-    // Get all writers with their sessions
     const writers = await c.db.query.writer.findMany({
       with: { sessions: true },
     });
 
-    // Calculate stats for each writer
-    const writerStats = writers.map((writer) => {
-      const stats = calculateWriterStats(writer.sessions);
-      return {
+    const stats = writers
+      .map((writer: any) => ({
         fid: writer.fid,
-        ...stats,
-      };
-    });
-
-    // Sort by current streak and get top 8
-    const top8 = writerStats
-      .sort((a, b) => b.currentStreak - a.currentStreak)
+        ...calculateWriterStats(writer.sessions),
+      }))
+      .sort((a: any, b: any) => b.currentStreak - a.currentStreak)
       .slice(0, 8);
 
-    // Clear existing leaderboard
+    // Clear and update leaderboard
     await c.db.delete(LeaderboardTable).where(sql`1=1`);
 
-    // Insert new leaderboard entries
-    for (const stats of top8) {
+    for (const stat of stats) {
       await c.db.insert(LeaderboardTable).values({
-        fid: stats.fid,
-        currentStreak: stats.currentStreak,
-        maxStreak: stats.maxStreak,
-        daysInAnkyverse: stats.daysInAnkyverse,
+        ...stat,
         lastUpdated: BigInt(Math.floor(Date.now() / 1000)),
       });
     }
 
-    return c.json({ success: true, leaderboard: top8 });
+    return c.json({ success: true, leaderboard: stats });
   } catch (error) {
     console.error("Error updating leaderboard:", error);
-    throw error;
+    return c.json({ success: false, error: String(error) });
   }
-});
+};
 
 // Sessions endpoints
 ponder.get("/sessions", async (c) => {
